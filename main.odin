@@ -1,0 +1,6 @@
+package quadtree
+
+main :: proc() {
+
+}
+
