@@ -111,26 +111,15 @@ quad_tree_query :: proc(range: rl.Rectangle) {
 main :: proc() {
     qt := quad_tree_make(rl.Rectangle{x = 0, y = 0, width = 100, height = 100})
 
-    // arena_buffer: [20 * mem.Megabyte]byte
-    raw_buffer, _ := mem.alloc(1 * mem.Gigabyte)
-
-    as_bytes_ptr := cast(^byte)raw_buffer
-    data := mem.ptr_to_bytes(as_bytes_ptr, 1 * mem.Gigabyte)
-
+    arena_buffer: [25 * mem.Kilobyte]byte
     arena: mem.Arena
-    mem.arena_init(&arena, data[:])
+    mem.arena_init(&arena, arena_buffer[:])
 
     arena_allocator := mem.arena_allocator(&arena)
 
-    // quad_tree_insert({50, 50}, &qt, arena_allocator)
-    // quad_tree_insert({8, 20}, &qt, arena_allocator)
-    // quad_tree_insert({90, 32}, &qt, arena_allocator)
-    // quad_tree_insert({90, 69}, &qt, arena_allocator)
-    // quad_tree_insert({40, 40}, &qt, arena_allocator)
-
     cached := context.allocator
     context.allocator = arena_allocator
-    for i in 0 ..< 50000000 {
+    for i in 0 ..< 500 {
         quad_tree_insert({rand.float32_uniform(0, 100), rand.float32_uniform(0, 100)}, &qt)
         fmt.printfln("Insert complete %v", i)
     }
