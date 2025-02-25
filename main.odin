@@ -8,11 +8,11 @@ import rl "vendor:raylib"
 
 Vec2f :: [2]f32
 
-QUAD_TREE_NODE_CAPACITY :: 4
+QUAD_TREE_NODE_CAPACITY :: 250
 
 Quad_Tree :: struct {
     boundary:   rl.Rectangle,
-    points:     sa.Small_Array(QUAD_TREE_NODE_CAPACITY, Vec2f),
+    points:     [dynamic]Vec2f,
     north_west: ^Quad_Tree,
     north_east: ^Quad_Tree,
     south_west: ^Quad_Tree,
@@ -47,8 +47,11 @@ quad_tree_insert :: proc(pos: Vec2f, qt: ^Quad_Tree) -> bool {
         return false
     }
 
-    if sa.len(qt.points) < QUAD_TREE_NODE_CAPACITY && qt.north_west == nil {
-        sa.append(&qt.points, pos)
+    if len(qt.points) < QUAD_TREE_NODE_CAPACITY && qt.north_west == nil {
+        if qt.points == nil {
+            qt.points = make([dynamic]Vec2f)
+        }
+        append(&qt.points, pos)
         fmt.printfln("Appending point")
         return true
     }
@@ -63,7 +66,7 @@ quad_tree_insert :: proc(pos: Vec2f, qt: ^Quad_Tree) -> bool {
     if quad_tree_insert(pos, qt.south_west) do return true
     if quad_tree_insert(pos, qt.south_east) do return true
 
-    return false
+    panic("Unable to subdivide any further, and unable to insert point into quad tree. Consider adjusting qtree parameters")
 }
 
 quad_tree_subdivide :: proc(qt: ^Quad_Tree) {
@@ -105,11 +108,84 @@ quad_tree_subdivide :: proc(qt: ^Quad_Tree) {
     }
 }
 
-quad_tree_query :: proc(range: rl.Rectangle) {
+quad_tree_query :: proc(range: rl.Rectangle, qt: ^Quad_Tree) -> [dynamic]Vec2f {
+    results := make([dynamic]Vec2f)
+
+    if !rl.CheckCollisionRecs(qt.boundary, range) {
+        return results
+    }
+
+    for p in qt.points {
+        if rl.CheckCollisionPointRec(p, range) {
+            append(&results, p)
+        }
+    }
+
+    if qt.north_west == nil {
+        return results
+    }
+
+    if child_results := quad_tree_query(range, qt.north_west); len(child_results) > 0 {
+        defer delete(child_results)
+        reserve(&results, len(results) + len(child_results))
+        for p in child_results {
+            append(&results, p)
+        }
+    }
+
+    if child_results := quad_tree_query(range, qt.north_east); len(child_results) > 0 {
+        defer delete(child_results)
+        reserve(&results, len(results) + len(child_results))
+        for p in child_results {
+            append(&results, p)
+        }
+    }
+
+    if child_results := quad_tree_query(range, qt.south_west); len(child_results) > 0 {
+        defer delete(child_results)
+        reserve(&results, len(results) + len(child_results))
+        for p in child_results {
+            append(&results, p)
+        }
+    }
+
+    if child_results := quad_tree_query(range, qt.south_east); len(child_results) > 0 {
+        defer delete(child_results)
+        reserve(&results, len(results) + len(child_results))
+        for p in child_results {
+            append(&results, p)
+        }
+    }
+
+    return results
 }
 
 main :: proc() {
-    qt := quad_tree_make(rl.Rectangle{x = 0, y = 0, width = 100, height = 100})
+    when ODIN_DEBUG {
+        track: mem.Tracking_Allocator
+        mem.tracking_allocator_init(&track, context.allocator)
+        context.allocator = mem.tracking_allocator(&track)
+
+        defer {
+            if len(track.allocation_map) > 0 {
+                fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+                for _, entry in track.allocation_map {
+                    fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+                }
+            }
+            if len(track.bad_free_array) > 0 {
+                fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+                for entry in track.bad_free_array {
+                    fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+                }
+            }
+            mem.tracking_allocator_destroy(&track)
+        }
+    }
+
+    WIDTH :: 1000
+    HEIGHT :: 1000
+    qt := quad_tree_make(rl.Rectangle{x = 0, y = 0, width = WIDTH, height = HEIGHT})
 
     arena_buffer: [25 * mem.Kilobyte]byte
     arena: mem.Arena
@@ -119,12 +195,20 @@ main :: proc() {
 
     cached := context.allocator
     context.allocator = arena_allocator
-    for i in 0 ..< 500 {
-        quad_tree_insert({rand.float32_uniform(0, 100), rand.float32_uniform(0, 100)}, &qt)
+
+    for i in 0 ..< 1000 {
+        quad_tree_insert({rand.float32_uniform(0, WIDTH), rand.float32_uniform(0, HEIGHT)}, &qt)
         fmt.printfln("Insert complete %v", i)
     }
+
     context.allocator = cached
+
     fmt.printfln("Allocator %v", arena)
+
+    results := quad_tree_query({0, 0, 100, 100}, &qt)
+    defer delete(results)
+
+    fmt.printfln("Results from query of {{10,10,10,10}} is \n %v with len %v", results, len(results))
 
     mem.arena_free_all(&arena)
 }
