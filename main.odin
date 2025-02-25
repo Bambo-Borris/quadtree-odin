@@ -9,7 +9,7 @@ import rl "vendor:raylib"
 
 Vec2f :: [2]f32
 
-QUAD_TREE_NODE_CAPACITY :: 250
+QUAD_TREE_NODE_CAPACITY :: 4
 
 Quad_Tree :: struct {
     boundary:   rl.Rectangle,
@@ -75,7 +75,7 @@ quad_tree_subdivide :: proc(qt: ^Quad_Tree) {
 
     err: mem.Allocator_Error
     qt.north_west, err = mem.new_clone(
-        quad_tree_make({x = qt.boundary.x, y = qt.boundary.x, width = half_bounds.x, height = half_bounds.y}),
+        quad_tree_make({x = qt.boundary.x, y = qt.boundary.y, width = half_bounds.x, height = half_bounds.y}),
     )
 
     if err != .None {
@@ -161,6 +161,54 @@ quad_tree_query :: proc(range: rl.Rectangle, qt: ^Quad_Tree) -> [dynamic]Vec2f {
     return results
 }
 
+quad_tree_get_visualisation :: proc(qt: ^Quad_Tree) -> (rect_list: [dynamic]rl.Rectangle) {
+    rect_list = make(type_of(rect_list))
+
+    append(&rect_list, qt.boundary)
+
+    if qt.north_west == nil {
+        return
+    }
+
+    if child_rects := quad_tree_get_visualisation(qt.north_west); len(child_rects) > 0 {
+        defer {
+            delete(child_rects)
+        }
+        for &rect in child_rects {
+            append(&rect_list, rect)
+        }
+    }
+
+    if child_rects := quad_tree_get_visualisation(qt.north_east); len(child_rects) > 0 {
+        defer {
+            delete(child_rects)
+        }
+        for &rect in child_rects {
+            append(&rect_list, rect)
+        }
+    }
+
+    if child_rects := quad_tree_get_visualisation(qt.south_west); len(child_rects) > 0 {
+        defer {
+            delete(child_rects)
+        }
+        for &rect in child_rects {
+            append(&rect_list, rect)
+        }
+    }
+
+    if child_rects := quad_tree_get_visualisation(qt.south_east); len(child_rects) > 0 {
+        defer {
+            delete(child_rects)
+        }
+        for &rect in child_rects {
+            append(&rect_list, rect)
+        }
+    }
+
+    return
+}
+
 main :: proc() {
     when ODIN_DEBUG {
         track: mem.Tracking_Allocator
@@ -214,9 +262,23 @@ main :: proc() {
 
     context.allocator = cached
 
+    rand_colours: [100]rl.Color
+
+    for &c in rand_colours {
+        c = rand_colour()
+    }
+
     for !rl.WindowShouldClose() {
         rl.BeginDrawing()
         rl.ClearBackground(rl.BLACK)
+
+
+        visualisations := quad_tree_get_visualisation(&qt)
+        defer delete(visualisations)
+
+        for &rect, index in visualisations {
+            rl.DrawRectangleV({rect.x, rect.y}, {rect.width, rect.height}, rand_colours[index])
+        }
 
         mouse_pos := rl.GetMousePosition()
         rl.DrawRectangleV(mouse_pos, RECT_SIZE * 2, rl.RED)
@@ -235,16 +297,15 @@ main :: proc() {
                 rl.DrawRectangleV(p, RECT_SIZE, rl.GREEN)
             }
         }
+
+        rl.DrawFPS(10, 10)
         rl.EndDrawing()
     }
 
-    // fmt.printfln("Allocator %v", arena)
-
-    // results := quad_tree_query({0, 0, 100, 100}, &qt)
-    // defer delete(results)
-
-    // fmt.printfln("Results from query of {{10,10,10,10}} is \n %v with len %v", results, len(results))
-
     mem.arena_free_all(&arena)
+}
+
+rand_colour :: proc() -> rl.Color {
+    return {u8(rand.float32_uniform(0, 1) * 255), u8(rand.float32_uniform(0, 1) * 255), u8(rand.float32_uniform(0, 1) * 255), 255}
 }
 
