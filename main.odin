@@ -4,6 +4,7 @@ import sa "core:container/small_array"
 import "core:fmt"
 import "core:math/rand"
 import "core:mem"
+import "core:slice"
 import rl "vendor:raylib"
 
 Vec2f :: [2]f32
@@ -183,8 +184,14 @@ main :: proc() {
         }
     }
 
-    WIDTH :: 1000
-    HEIGHT :: 1000
+    WIDTH :: 640
+    HEIGHT :: 480
+
+    RECT_SIZE :: Vec2f{10, 10}
+
+    rl.InitWindow(WIDTH, HEIGHT, "Quadtree Test")
+    rl.SetTargetFPS(60)
+
     qt := quad_tree_make(rl.Rectangle{x = 0, y = 0, width = WIDTH, height = HEIGHT})
 
     arena_buffer: [25 * mem.Kilobyte]byte
@@ -196,19 +203,47 @@ main :: proc() {
     cached := context.allocator
     context.allocator = arena_allocator
 
-    for i in 0 ..< 1000 {
-        quad_tree_insert({rand.float32_uniform(0, WIDTH), rand.float32_uniform(0, HEIGHT)}, &qt)
+    rect_positions: [100]Vec2f
+
+    for i in 0 ..< len(rect_positions) {
+        rect_positions[i].x = rand.float32_uniform(0, WIDTH)
+        rect_positions[i].y = rand.float32_uniform(0, HEIGHT)
+        quad_tree_insert(rect_positions[i], &qt)
         fmt.printfln("Insert complete %v", i)
     }
 
     context.allocator = cached
 
-    fmt.printfln("Allocator %v", arena)
+    for !rl.WindowShouldClose() {
+        rl.BeginDrawing()
+        rl.ClearBackground(rl.BLACK)
 
-    results := quad_tree_query({0, 0, 100, 100}, &qt)
-    defer delete(results)
+        mouse_pos := rl.GetMousePosition()
+        rl.DrawRectangleV(mouse_pos, RECT_SIZE * 2, rl.RED)
 
-    fmt.printfln("Results from query of {{10,10,10,10}} is \n %v with len %v", results, len(results))
+        query_results := quad_tree_query(rl.Rectangle{x = mouse_pos.x, y = mouse_pos.y, width = RECT_SIZE.x, height = RECT_SIZE.y}, &qt)
+
+        defer {
+            delete(query_results)
+        }
+
+        for p in rect_positions {
+            _, result := slice.linear_search(query_results[:], p)
+            if !result {
+                rl.DrawRectangleV(p, RECT_SIZE, rl.WHITE)
+            } else {
+                rl.DrawRectangleV(p, RECT_SIZE, rl.GREEN)
+            }
+        }
+        rl.EndDrawing()
+    }
+
+    // fmt.printfln("Allocator %v", arena)
+
+    // results := quad_tree_query({0, 0, 100, 100}, &qt)
+    // defer delete(results)
+
+    // fmt.printfln("Results from query of {{10,10,10,10}} is \n %v with len %v", results, len(results))
 
     mem.arena_free_all(&arena)
 }
